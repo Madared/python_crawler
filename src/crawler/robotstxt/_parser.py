@@ -31,7 +31,7 @@ def _find_group(cleaned_lines: list[str], user_agent: str) -> list[str] | None:
                 current_collector.append(line)
             continue
 
-        ua = line[len("user-agent:"):].strip()
+        ua = line[len("user-agent:") :].strip()
         if ua.lower() == user_agent.lower():
             exact_directives = []
             current_collector = exact_directives
