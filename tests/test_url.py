@@ -1,6 +1,6 @@
 import pytest
 
-from crawler.url import is_same_domain, normalize_url, resolve_url
+from crawler.url import is_same_domain, is_valid_url, normalize_url, resolve_url
 
 
 class TestNormalizeUrl:
@@ -50,6 +50,25 @@ class TestResolveUrl:
     )
     def test_resolve(self, href, base_url, expected):
         assert resolve_url(href, base_url) == expected
+
+
+class TestIsValidUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://example.com", True),
+            ("http://example.com/path", True),
+            ("https://example.com:8080/page?q=1", True),
+            ("http://[::1]/path", True),
+            ("not-a-url", False),
+            ("", False),
+            ("  ", False),
+            ("/relative/path", False),
+            ("javascript:void(0)", False),
+        ],
+    )
+    def test_is_valid_url(self, url, expected):
+        assert is_valid_url(url) == expected
 
 
 class TestIsSameDomain:

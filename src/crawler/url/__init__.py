@@ -54,6 +54,11 @@ def resolve_url(href: str, base_url: str) -> str | None:
     return normalize_url(resolved)
 
 
+def is_valid_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return bool(parsed.scheme and parsed.netloc)
+
+
 def is_same_domain(url: str, domain: str) -> bool:
     host = urlparse(url).hostname
     if host is None:
