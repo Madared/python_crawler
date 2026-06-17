@@ -40,7 +40,11 @@ class TestResolveUrl:
             ("", "https://example.com/", None),
             ("  ", "https://example.com/", None),
             ("?query=1", "https://example.com/page", "https://example.com/page?query=1"),
-            ("/path with spaces", "https://example.com", "https://example.com/path%20with%20spaces"),
+            (
+                "/path with spaces",
+                "https://example.com",
+                "https://example.com/path%20with%20spaces",
+            ),
             ("/café", "https://example.com", "https://example.com/caf%C3%A9"),
         ],
     )
