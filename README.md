@@ -21,11 +21,8 @@ uv run crawler --help
 ## Setup and Testing
 
 ```bash
-# Install dependencies
+# Install dependencies and build the package
 uv sync --all-extras
-
-# Install package in editable mode so tests can import it
-uv pip install -e .
 
 # Run tests
 uv run pytest tests/

@@ -15,11 +15,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install dependencies and build package
         run: uv sync --all-extras
-
-      - name: Install package in editable mode
-        run: uv pip install -e .
 
       - name: Check lockfile freshness
         run: uv lock --check
