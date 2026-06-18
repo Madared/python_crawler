@@ -12,6 +12,7 @@ import typer
 from crawler.fetcher import Fetcher
 from crawler.frontier import Frontier, FrontierStats
 from crawler.parser import extract_links
+from crawler.robotstxt import RobotsTxtRules, parse_robots_txt
 
 
 class CrawlStatus(IntEnum):
@@ -46,11 +47,17 @@ async def _worker(
     delay: float,
     output_lock: asyncio.Lock,
     shutdown_event: asyncio.Event,
+    robots_rules: RobotsTxtRules,
 ) -> None:
     while not shutdown_event.is_set():
         url = await frontier.next_url()
         if url is None:
             break
+
+        path = urlparse(url).path or "/"
+        if not robots_rules.is_allowed(path):
+            frontier.mark_done(url, success=True)
+            continue
 
         result = await fetcher.fetch(url)
 
@@ -101,9 +108,22 @@ async def run_crawl(
 
     loop.add_signal_handler(signal.SIGINT, _on_sigint)
 
+    robots_url = f"https://{domain}/robots.txt"
+    try:
+        robots_response = await client.get(robots_url)
+        robots_rules = parse_robots_txt(robots_response.text)
+    except Exception:
+        robots_rules = RobotsTxtRules()
+
+    effective_delay = robots_rules.get_crawl_delay(delay)
+
     try:
         workers = [
-            asyncio.create_task(_worker(frontier, fetcher, delay, output_lock, shutdown_event))
+            asyncio.create_task(
+                _worker(
+                    frontier, fetcher, effective_delay, output_lock, shutdown_event, robots_rules
+                )
+            )
             for _ in range(concurrency)
         ]
         await asyncio.gather(*workers)

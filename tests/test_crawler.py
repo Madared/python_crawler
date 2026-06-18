@@ -273,3 +273,92 @@ class TestCrawler:
 
             result = await run_crawl("https://example.com", concurrency=20)
             assert result.status == CrawlStatus.SUCCESS
+
+    async def test_robots_disallow_path(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(
+                200, text="User-agent: *\nDisallow: /private/",
+                headers={"content-type": "text/plain"},
+            )
+            respx.get("https://example.com/").respond(
+                200,
+                text='<a href="/ok">ok</a><a href="/private/page">private</a>',
+                headers={"content-type": "text/html"},
+            )
+            respx.get("https://example.com/ok").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+
+    async def test_robots_no_robots_txt(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(404)
+            respx.get("https://example.com/").respond(
+                200,
+                text='<a href="/page">page</a>',
+                headers={"content-type": "text/html"},
+            )
+            respx.get("https://example.com/page").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+
+    async def test_robots_allow_overrides(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(
+                200,
+                text="User-agent: *\nDisallow: /\nAllow: /public/",
+                headers={"content-type": "text/plain"},
+            )
+            respx.get("https://example.com/").respond(
+                200,
+                text='<a href="/public/page">public</a><a href="/private/page">private</a>',
+                headers={"content-type": "text/html"},
+            )
+            respx.get("https://example.com/public/page").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+
+    async def test_robots_disallowed_not_failure(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(
+                200,
+                text="User-agent: *\nDisallow: /blocked",
+                headers={"content-type": "text/plain"},
+            )
+            respx.get("https://example.com/").respond(
+                200,
+                text='<a href="/blocked">blocked</a>',
+                headers={"content-type": "text/html"},
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+            assert result.stats.visited == 2
+            assert result.stats.failed == 0
+
+    async def test_robots_all_allowed(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(
+                200,
+                text="User-agent: *\nAllow: /",
+                headers={"content-type": "text/plain"},
+            )
+            respx.get("https://example.com/").respond(
+                200,
+                text='<a href="/page">page</a>',
+                headers={"content-type": "text/html"},
+            )
+            respx.get("https://example.com/page").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
