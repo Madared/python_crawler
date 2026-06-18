@@ -363,3 +363,29 @@ class TestCrawler:
 
             result = await run_crawl("https://example.com", concurrency=1)
             assert result.status == CrawlStatus.SUCCESS
+
+    async def test_verbose_logging(self, capsys):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1, verbose=True)
+            captured = capsys.readouterr()
+            assert result.status == CrawlStatus.SUCCESS
+            assert "visited" in captured.err
+            assert "discovered" in captured.err
+            assert "failed" in captured.err
+
+    async def test_non_verbose(self, capsys):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1, verbose=False)
+            captured = capsys.readouterr()
+            assert result.status == CrawlStatus.SUCCESS
+            assert captured.err == ""

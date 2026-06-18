@@ -41,6 +41,14 @@ def _print_result(
             typer.echo(f"  -> {link}")
 
 
+def _verbose_progress(stats: FrontierStats) -> None:
+    typer.echo(
+        f"  [{stats.visited} visited / {stats.discovered}"
+        f" discovered / {stats.failed} failed]",
+        err=True,
+    )
+
+
 async def _worker(
     frontier: Frontier,
     fetcher: Fetcher,
@@ -48,6 +56,7 @@ async def _worker(
     output_lock: asyncio.Lock,
     shutdown_event: asyncio.Event,
     robots_rules: RobotsTxtRules,
+    verbose: bool,
 ) -> None:
     while not shutdown_event.is_set():
         url = await frontier.next_url()
@@ -57,6 +66,9 @@ async def _worker(
         path = urlparse(url).path or "/"
         if not robots_rules.is_allowed(path):
             frontier.mark_done(url, success=True)
+            if verbose:
+                stats = frontier.stats
+                _verbose_progress(stats)
             continue
 
         result = await fetcher.fetch(url)
@@ -72,6 +84,9 @@ async def _worker(
 
         async with output_lock:
             _print_result(result.status_code, result.final_url, links, result.error)
+            if verbose:
+                stats = frontier.stats
+                _verbose_progress(stats)
 
         if result.error is None:
             await asyncio.sleep(delay)
@@ -121,7 +136,8 @@ async def run_crawl(
         workers = [
             asyncio.create_task(
                 _worker(
-                    frontier, fetcher, effective_delay, output_lock, shutdown_event, robots_rules
+                    frontier, fetcher, effective_delay, output_lock,
+                    shutdown_event, robots_rules, verbose,
                 )
             )
             for _ in range(concurrency)
