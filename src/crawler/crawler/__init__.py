@@ -1,7 +1,11 @@
 from crawler.crawler._crawler import Crawler
+from crawler.crawler._storage import DummyStorage, Storage
 from crawler.crawler._types import CrawlerOptions, CrawlResult, CrawlStatus
 
-__all__ = ["CrawlStatus", "CrawlResult", "CrawlerOptions", "Crawler", "run_crawl"]
+__all__ = [
+    "CrawlStatus", "CrawlResult", "CrawlerOptions", "Crawler",
+    "run_crawl", "Storage", "DummyStorage",
+]
 
 
 async def run_crawl(
@@ -13,6 +17,7 @@ async def run_crawl(
     verbose: bool = False,
     max_time: float | None = None,
     max_retries: int = 3,
+    storage: Storage | None = None,
 ) -> CrawlResult:
     options = CrawlerOptions(
         concurrency=concurrency,
@@ -22,5 +27,5 @@ async def run_crawl(
         max_time=max_time,
         max_retries=max_retries,
     )
-    crawler = Crawler(options)
+    crawler = Crawler(options, storage=storage)
     return await crawler.run_crawl(seed_url)

@@ -8,6 +8,7 @@ import httpx
 
 from crawler.crawler._dispatcher import WorkDispatcher
 from crawler.crawler._logger import CrawlLogger
+from crawler.crawler._storage import DummyStorage, Storage
 from crawler.crawler._types import CrawlerOptions, CrawlResult, CrawlStatus
 from crawler.fetcher import Fetcher, RetryFetcher, SimpleFetcher
 from crawler.frontier import Frontier, FrontierStats
@@ -15,8 +16,9 @@ from crawler.robotstxt import RobotsTxtRules, parse_robots_txt
 
 
 class Crawler:
-    def __init__(self, options: CrawlerOptions) -> None:
+    def __init__(self, options: CrawlerOptions, storage: Storage | None = None) -> None:
         self._options = options
+        self._storage = storage or DummyStorage()
 
     async def _fetch_robots(
         self,
@@ -63,6 +65,7 @@ class Crawler:
             shutdown_event=shutdown_event,
             robots_rules=robots_rules,
             logger=logger,
+            storage=self._storage,
         )
 
         workers = [
@@ -128,6 +131,7 @@ class Crawler:
                 frontier, fetcher, shutdown_event, output_lock, robots_rules, effective_delay
             )
         finally:
+            await self._storage.close()
             await client.aclose()
             try:
                 loop.remove_signal_handler(signal.SIGINT)

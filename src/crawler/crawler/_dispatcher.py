@@ -4,6 +4,7 @@ import asyncio
 from urllib.parse import urlparse
 
 from crawler.crawler._logger import CrawlLogger
+from crawler.crawler._storage import Storage
 from crawler.fetcher import Fetcher
 from crawler.frontier import Frontier
 from crawler.parser import extract_links
@@ -20,6 +21,7 @@ class WorkDispatcher:
         shutdown_event: asyncio.Event,
         robots_rules: RobotsTxtRules,
         logger: CrawlLogger,
+        storage: Storage,
     ) -> None:
         self._frontier = frontier
         self._fetcher = fetcher
@@ -28,6 +30,7 @@ class WorkDispatcher:
         self._shutdown_event = shutdown_event
         self._robots_rules = robots_rules
         self._logger = logger
+        self._storage = storage
 
     async def work(self, url: str) -> None:
         path = urlparse(url).path or "/"
@@ -47,8 +50,12 @@ class WorkDispatcher:
         is_success = result.error is None and result.status_code < 400
         self._frontier.mark_done(url, success=is_success)
 
+        await self._storage.save(result)
+
         async with self._output_lock:
-            self._logger.page_fetched(result.status_code, result.final_url, links, result.error)
+            self._logger.page_fetched(
+                result.status_code, result.final_url, links, result.error
+            )
             self._logger.progress(self._frontier.stats)
 
         if result.error is None:
