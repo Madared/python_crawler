@@ -37,6 +37,8 @@ uv run crawler https://example.com --verbose --max-time 30
 
 ### Output format
 
+With `--verbose`, per-page output goes to stdout:
+
 ```
 200 https://example.com/
   -> https://example.com/page1
@@ -45,7 +47,7 @@ uv run crawler https://example.com --verbose --max-time 30
 ERROR https://example.com/broken [Connection refused]
 ```
 
-Status codes and final URLs go to stdout. Errors and verbose progress go to stderr, allowing clean pipelining: `./crawler https://example.com > results.txt`.
+Errors and verbose progress stats go to stderr. Without `--verbose`, only the summary line is printed to stdout (e.g., `Crawl complete: 5 pages`), allowing clean pipelining: `./crawler https://example.com > results.txt`.
 
 ## Setup and Testing
 
@@ -168,9 +170,9 @@ Python's GIL makes multi-threading ineffective for CPU-bound parallelism, but we
 
 The trade-off: async code is harder to debug, and a blocking operation (e.g., synchronous DNS resolution) would stall the entire event loop. All I/O in this codebase is explicitly async to avoid this.
 
-**fnmatch vs Procedural Checks for robots.txt Wildcards**
+**Compiled Regex vs Procedural Checks for robots.txt Wildcards**
 
-The robots.txt parser uses Python's `fnmatch` module for wildcard pattern matching (`*.pdf$`) rather than writing manual procedural string checks. `fnmatch` is implemented in C, handles edge cases correctly, and keeps the code concise and readable. Writing equivalent logic by hand (splitting on `*`, checking prefixes and suffixes, handling `$` anchors) would be more verbose, harder to maintain, and more likely to have subtle bugs. The trade-off is a small dependency on `fnmatch`'s exact behavior, but this is a standard library module with well-defined semantics.
+The robots.txt parser converts wildcard patterns (`*` for any characters, `$` for end-of-path) into compiled regex via `re.compile()` rather than writing manual procedural string checks. Compiled regex is implemented in C, handles edge cases correctly, and keeps the code concise. Writing equivalent logic by hand (splitting on `*`, checking prefixes and suffixes, handling `$` anchors) would be more verbose, harder to maintain, and more likely to have subtle bugs. The trade-off is that regex compilation happens once per rule at parse time, but this is negligible for the typical number of rules (dozens, not thousands).
 
 **In-Memory Frontier vs Persistent Queue**
 
