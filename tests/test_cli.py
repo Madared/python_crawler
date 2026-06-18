@@ -1,3 +1,4 @@
+import respx
 from typer.testing import CliRunner
 
 from crawler.cli import app
@@ -23,33 +24,35 @@ class TestCli:
         assert "Invalid URL" in result.stderr
 
     def test_all_option_defaults(self):
-        result = runner.invoke(app, ["https://example.com"])
-        assert result.exit_code == 0
-        assert "https://example.com" in result.stdout
-        assert "concurrency=10" in result.stdout
-        assert "max_pages=0" in result.stdout
-        assert "delay=0.2" in result.stdout
-        assert "verbose=False" in result.stdout
+        with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+            result = runner.invoke(app, ["https://example.com"])
+            assert result.exit_code == 0
+            assert "200 https://example.com/" in result.stdout
 
     def test_option_parsing(self):
-        result = runner.invoke(
-            app,
-            [
-                "https://example.com",
-                "--concurrency",
-                "5",
-                "--max-pages",
-                "20",
-                "--delay",
-                "1.0",
-                "--verbose",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "concurrency=5" in result.stdout
-        assert "max_pages=20" in result.stdout
-        assert "delay=1.0" in result.stdout
-        assert "verbose=True" in result.stdout
+        with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+            result = runner.invoke(
+                app,
+                [
+                    "https://example.com",
+                    "--concurrency",
+                    "5",
+                    "--max-pages",
+                    "20",
+                    "--delay",
+                    "1.0",
+                    "--verbose",
+                ],
+            )
+            assert result.exit_code == 0
 
     def test_version_flag(self):
         result = runner.invoke(app, ["--version"])

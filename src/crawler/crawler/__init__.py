@@ -12,6 +12,7 @@ async def run_crawl(
     delay: float = 0.2,
     verbose: bool = False,
     max_time: float | None = None,
+    max_retries: int = 3,
 ) -> CrawlResult:
     options = CrawlerOptions(
         concurrency=concurrency,
@@ -19,6 +20,7 @@ async def run_crawl(
         delay=delay,
         verbose=verbose,
         max_time=max_time,
+        max_retries=max_retries,
     )
     crawler = Crawler(options)
     return await crawler.run_crawl(seed_url)
