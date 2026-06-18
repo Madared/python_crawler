@@ -43,6 +43,13 @@ HTTP fetching with connection pooling and error handling.
 - **`Fetcher`** — wraps an `httpx.AsyncClient` with configurable response size limits. `fetch(url)` returns a `FetchResult` with the HTML content (decoded only for `text/html` responses), the final URL after redirects, and any transport error (timeout, DNS failure, SSL error, etc.). Non-HTML content types are detected but not decoded.
 - **`FetchResult`** — dataclass with `status_code`, `html`, `final_url`, `content_type`, and `error`.
 
+### `crawler/frontier/`
+
+Crawl state management — tracks which URLs are discovered, in progress, and visited.
+
+- **`Frontier`** — manages the URL queue with async-safe FIFO ordering, O(1) dedup (via visited/in-progress/queued sets), domain scoping, and max-pages limit. Exhaustion signaling via `asyncio.Event` ensures workers only stop when the queue is empty AND no workers are actively processing (prevents the queue-empty-but-work-in-flight race condition). `add_url` feeds URLs in, `next_url` returns the next URL to crawl (racing queue vs exhaustion), `mark_done` signals completion.
+- **`FrontierStats`** — dataclass with `discovered`, `visited`, and `failed` counts.
+
 ## Getting Started
 
 ```bash
