@@ -11,7 +11,7 @@ class CrawlLogger:
 
     @staticmethod
     def page_fetched(
-            status_code: int,
+        status_code: int,
         final_url: str,
         links: list[str],
         error: str | None,
