@@ -18,18 +18,21 @@ class WorkerPool:
             url = await self._ctx.frontier.next_url()
             if url is None:
                 break
-            await self._dispatch.work(url)
+            try:
+                await self._dispatch.work(url)
+            except Exception:
+                self._ctx.frontier.mark_done(url, success=False)
 
     async def run(self) -> CrawlResult:
         workers = [
-            asyncio.create_task(self._run_worker()) for _ in range(self._ctx._options.concurrency)
+            asyncio.create_task(self._run_worker()) for _ in range(self._ctx.options.concurrency)
         ]
 
-        if self._ctx._options.max_time is not None:
+        if self._ctx.options.max_time is not None:
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*workers),
-                    timeout=self._ctx._options.max_time,
+                    timeout=self._ctx.options.max_time,
                 )
             except TimeoutError:
                 self._ctx.shutdown_event.set()

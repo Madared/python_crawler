@@ -15,10 +15,11 @@ from crawler.robotstxt import RobotsTxtRules, parse_robots_txt
 
 async def _fetch_robots(
     client: httpx.AsyncClient,
-    domain: str,
+    seed_url: str,
     cli_delay: float,
 ) -> tuple[RobotsTxtRules, float]:
-    robots_url = f"https://{domain}/robots.txt"
+    parsed = urlparse(seed_url)
+    robots_url = f"{parsed.scheme}://{parsed.hostname}/robots.txt"
     try:
         response = await client.get(robots_url)
         rules = parse_robots_txt(response.text)
@@ -54,7 +55,7 @@ async def create_crawler_context(
     loop = asyncio.get_running_loop()
     loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
 
-    robots_rules, effective_delay = await _fetch_robots(client, domain, options.delay)
+    robots_rules, effective_delay = await _fetch_robots(client, seed_url, options.delay)
 
     return CrawlerContext(
         domain=domain,

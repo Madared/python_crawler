@@ -39,6 +39,10 @@ class CrawlerContext:
         self._options = options
         self._signal_handler_registered = signal_handler_registered
 
+    @property
+    def options(self) -> CrawlerOptions:
+        return self._options
+
     async def close(self) -> None:
         await self.client.aclose()
         if not self._signal_handler_registered:

@@ -31,14 +31,6 @@ class CrawlLogger:
             err=True,
         )
 
-    def page_skipped(self, stats: FrontierStats) -> None:
-        if not self._verbose:
-            return
-        typer.echo(
-            f"  [{stats.visited} visited / {stats.discovered} discovered / {stats.failed} failed]",
-            err=True,
-        )
-
     @staticmethod
     def print_summary(stats: FrontierStats) -> None:
         failed_part = f", {stats.failed} failed" if stats.failed > 0 else ""

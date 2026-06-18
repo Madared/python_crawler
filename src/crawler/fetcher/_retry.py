@@ -16,9 +16,6 @@ class RetryFetcher(Fetcher):
         self._verbose = verbose
 
     async def fetch(self, url: str) -> FetchResult:
-        result = FetchResult(
-            status_code=0, html=None, final_url=url, content_type="", error="No fetch attempted"
-        )
         for attempt in range(self._max_retries + 1):
             result = await self._fetcher.fetch(url)
             if result.error is None and result.status_code != 429:
@@ -32,4 +29,3 @@ class RetryFetcher(Fetcher):
                     err=True,
                 )
             await asyncio.sleep(backoff)
-        return result

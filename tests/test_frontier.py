@@ -9,7 +9,7 @@ class TestFrontier:
         url = await f.next_url()
         assert url == "https://example.com/"
 
-        assert await f.add_url("https://example.com/page1") is True
+        assert f.add_url("https://example.com/page1") is True
         assert f.stats.discovered == 2
 
         f.mark_done(url)
@@ -29,36 +29,34 @@ class TestFrontier:
         f = Frontier("https://example.com", "example.com")
         await f.next_url()
 
-        assert await f.add_url("https://example.com/page") is True
-        assert await f.add_url("https://example.com/page") is False
+        assert f.add_url("https://example.com/page") is True
+        assert f.add_url("https://example.com/page") is False
         assert f.stats.discovered == 2
 
     async def test_domain_filtering(self):
         f = Frontier("https://example.com", "example.com")
-        assert await f.add_url("https://other.com/page") is False
+        assert f.add_url("https://other.com/page") is False
         assert f.stats.discovered == 1
 
     async def test_subdomain_filtering(self):
         f = Frontier("https://example.com", "example.com")
-        assert await f.add_url("https://sub.example.com/page") is False
+        assert f.add_url("https://sub.example.com/page") is False
         assert f.stats.discovered == 1
 
     async def test_max_pages(self):
         f = Frontier("https://example.com", "example.com", max_pages=2)
         await f.next_url()
 
-        assert await f.add_url("https://example.com/page1") is True
+        assert f.add_url("https://example.com/page1") is True
         assert f.stats.discovered == 2
-        assert await f.add_url("https://example.com/page2") is False
+        assert f.add_url("https://example.com/page2") is False
         assert f.stats.discovered == 2
 
     async def test_concurrent_add(self):
         f = Frontier("https://example.com", "example.com")
         await f.next_url()
 
-        results = await asyncio.gather(
-            *[f.add_url(f"https://example.com/page{i}") for i in range(10)]
-        )
+        results = [f.add_url(f"https://example.com/page{i}") for i in range(10)]
         assert all(results)
         assert f.stats.discovered == 11
 
@@ -95,7 +93,7 @@ class TestFrontier:
     async def test_exhaustion_when_all_done(self):
         f = Frontier("https://example.com", "example.com")
         url = await f.next_url()
-        assert await f.add_url("https://example.com/page") is True
+        assert f.add_url("https://example.com/page") is True
         f.mark_done(url)
         assert not f.exhausted.is_set()
 
@@ -110,20 +108,20 @@ class TestFrontier:
 
         f.mark_done(url)
 
-        assert await f.add_url(url) is False
+        assert f.add_url(url) is False
 
     async def test_visited_url_not_requeued(self):
         f = Frontier("https://example.com", "example.com")
         url = await f.next_url()
         f.mark_done(url)
 
-        assert await f.add_url(url) is False
+        assert f.add_url(url) is False
 
     async def test_in_progress_url_not_requeued(self):
         f = Frontier("https://example.com", "example.com")
         url = await f.next_url()
 
-        assert await f.add_url(url) is False
+        assert f.add_url(url) is False
 
     async def test_mark_done_idempotent(self):
         f = Frontier("https://example.com", "example.com")
@@ -142,7 +140,7 @@ class TestFrontier:
         f.mark_done(url)
         assert f.exhausted.is_set()
 
-        assert await f.add_url("https://example.com/new-page") is True
+        assert f.add_url("https://example.com/new-page") is True
         assert not f.exhausted.is_set()
 
         url2 = await f.next_url()
@@ -150,7 +148,7 @@ class TestFrontier:
 
     async def test_concurrent_mark_done_no_race(self):
         f = Frontier("https://example.com", "example.com")
-        assert await f.add_url("https://example.com/page") is True
+        assert f.add_url("https://example.com/page") is True
 
         async def work():
             url = await f.next_url()
@@ -180,7 +178,7 @@ class TestFrontier:
         assert f.stats.visited == 1
         assert f.stats.failed == 1
 
-        assert await f.add_url("https://example.com/page") is True
+        assert f.add_url("https://example.com/page") is True
         url2 = await f.next_url()
         f.mark_done(url2, success=True)
         assert f.stats.visited == 2
@@ -188,5 +186,5 @@ class TestFrontier:
 
     async def test_invalid_url_skipped(self):
         f = Frontier("https://example.com", "example.com")
-        assert await f.add_url("not-a-url") is False
+        assert f.add_url("not-a-url") is False
         assert f.stats.discovered == 1

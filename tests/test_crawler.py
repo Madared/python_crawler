@@ -458,6 +458,25 @@ class TestCrawler:
         assert result.stats.visited == 1
         assert result.stats.failed == 1
 
+    async def test_robots_txt_http_scheme(self):
+        async with respx.mock:
+            respx.get("http://example.com/robots.txt").respond(
+                200,
+                text="User-agent: *\nDisallow: /private/",
+                headers={"content-type": "text/plain"},
+            )
+            respx.get("http://example.com/").respond(
+                200,
+                text='<a href="/public">public</a>',
+                headers={"content-type": "text/html"},
+            )
+            respx.get("http://example.com/public").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("http://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+
 
 class TestDummyStorage:
     async def test_save_called(self):
@@ -543,7 +562,6 @@ class TestWorkerPool:
         from unittest.mock import AsyncMock
 
         import httpx
-        import pytest
 
         from crawler.crawler import CrawlerOptions
         from crawler.crawler._context import CrawlerContext
@@ -579,8 +597,10 @@ class TestWorkerPool:
         dispatch.work.side_effect = RuntimeError("Worker crashed!")
 
         pool = WorkerPool(ctx, dispatch)
-        with pytest.raises(RuntimeError, match="Worker crashed!"):
-            await pool.run()
+        result = await pool.run()
+        assert result.status == CrawlStatus.PARTIAL
+        assert frontier.stats.visited >= 1
+        assert frontier.stats.failed >= 1
 
     async def test_worker_timeout_produces_partial(self):
         import httpx

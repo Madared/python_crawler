@@ -30,7 +30,7 @@ class Frontier:
         self._queued.add(seed)
         self._stats.discovered += 1
 
-    async def add_url(self, url: str) -> bool:
+    def add_url(self, url: str) -> bool:
         if not is_valid_url(url):
             return False
 

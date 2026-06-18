@@ -22,7 +22,7 @@ class WorkDispatcher:
         path = urlparse(url).path or "/"
         if not self._config.robots_rules.is_allowed(path):
             self._deps.frontier.mark_done(url, success=True)
-            self._deps.logger.page_skipped(self._deps.frontier.stats)
+            self._deps.logger.progress(self._deps.frontier.stats)
             return
 
         result = await self._deps.fetcher.fetch(url)
@@ -31,7 +31,7 @@ class WorkDispatcher:
         if result.html and result.error is None:
             links = extract_links(result.html, result.final_url)
             for link in links:
-                await self._deps.frontier.add_url(link)
+                self._deps.frontier.add_url(link)
 
         is_success = result.error is None and result.status_code < 400
         self._deps.frontier.mark_done(url, success=is_success)
