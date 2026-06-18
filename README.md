@@ -12,6 +12,54 @@ A web crawler project built as part of a job interview process for **Zego**.
 - **ruff** – linting
 - **uv** – package management
 
+## CLI Usage
+
+```bash
+uv run crawler --help
+uv run crawler https://example.com
+uv run crawler https://example.com --concurrency 20 --max-pages 100
+uv run crawler https://example.com --verbose --max-time 30
+```
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `URL` | (required) | Seed URL to crawl |
+| `--concurrency`, `-c` | `10` | Max concurrent requests |
+| `--max-pages`, `-m` | `0` | Max pages to crawl (`0` = unlimited) |
+| `--delay`, `-d` | `0.2` | Politeness delay in seconds between requests |
+| `--verbose`, `-v` | `False` | Print progress to stderr |
+| `--max-time` | (none) | Max crawl duration in seconds |
+| `--max-retries` | `3` | Max retries per URL (exponential backoff) |
+| `--version` | | Show version and exit |
+| `--help` | | Show usage and exit |
+
+### Output format
+
+```
+200 https://example.com/
+  -> https://example.com/page1
+  -> https://example.com/page2
+200 https://example.com/page1
+ERROR https://example.com/broken [Connection refused]
+```
+
+Status codes and final URLs go to stdout. Errors and verbose progress go to stderr, allowing clean pipelining: `./crawler https://example.com > results.txt`.
+
+## Setup and Testing
+
+```bash
+# Install dependencies and build the package
+uv sync --all-extras
+
+# Run tests
+uv run pytest tests/
+
+# Run linter
+uv run ruff check src/
+```
+
 ## Modules
 
 ### `crawler/url/`
@@ -57,21 +105,8 @@ Crawl orchestrator — wires the fetcher, parser, and frontier together.
 - **`run_crawl`** — async function that runs a full crawl. Creates workers that loop: `next_url` → `fetch` → `extract_links` → `add_url` → `mark_done`. Handles concurrency, politeness delay, graceful shutdown on SIGINT, and client cleanup. Returns a `CrawlResult`.
 - **`CrawlResult`** — dataclass with `status` (`CrawlStatus.SUCCESS`, `CrawlStatus.PARTIAL`, or `CrawlStatus.FATAL`) and `stats` (`FrontierStats` with `discovered`, `visited`, `failed` counts).
 
-## Getting Started
+### `crawler/cli.py`
 
-```bash
-uv run crawler --help
-```
+CLI entry point. Defines the `crawl` command with all user-facing options.
 
-## Setup and Testing
-
-```bash
-# Install dependencies and build the package
-uv sync --all-extras
-
-# Run tests
-uv run pytest tests/
-
-# Run linter
-uv run ruff check src/
-```
+- **`crawl`** — runs the crawler from the command line. Required `URL` argument, validated on input. Options: `--concurrency` (10), `--max-pages` (0 = unlimited), `--delay` (0.2s), `--verbose`, `--max-time`, `--max-retries` (3), `--version`, `--help`.
