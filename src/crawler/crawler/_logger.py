@@ -9,8 +9,8 @@ class CrawlLogger:
     def __init__(self, verbose: bool = False) -> None:
         self._verbose = verbose
 
-    @staticmethod
     def page_fetched(
+        self,
         status_code: int,
         final_url: str,
         links: list[str],
@@ -18,7 +18,7 @@ class CrawlLogger:
     ) -> None:
         if error:
             typer.echo(f"ERROR {final_url} [{error}]", err=True)
-        else:
+        elif self._verbose:
             typer.echo(f"{status_code} {final_url}")
             for link in links:
                 typer.echo(f"  -> {link}")
@@ -38,3 +38,8 @@ class CrawlLogger:
             f"  [{stats.visited} visited / {stats.discovered} discovered / {stats.failed} failed]",
             err=True,
         )
+
+    @staticmethod
+    def print_summary(stats: FrontierStats) -> None:
+        failed_part = f", {stats.failed} failed" if stats.failed > 0 else ""
+        typer.echo(f"Crawl complete: {stats.visited} pages{failed_part}")

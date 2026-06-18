@@ -31,7 +31,7 @@ class TestCli:
             )
             result = runner.invoke(app, ["https://example.com"])
             assert result.exit_code == 0
-            assert "200 https://example.com/" in result.stdout
+            assert "Crawl complete" in result.stdout
 
     def test_option_parsing(self):
         with respx.mock:

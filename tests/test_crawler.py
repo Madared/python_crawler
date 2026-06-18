@@ -76,9 +76,8 @@ class TestCrawler:
 
             assert result.status == CrawlStatus.SUCCESS
             out = captured.out
-            assert "200 https://example.com/" in out
-            assert "  -> https://example.com/page1" in out
-            assert "  -> https://example.com/page2" in out
+            assert "Crawl complete" in out
+            assert "3 pages" in out
             err = captured.err
             assert err == ""
 
@@ -105,7 +104,7 @@ class TestCrawler:
             result = await run_crawl("https://example.com/start", concurrency=1)
             assert result.status == CrawlStatus.SUCCESS
 
-    async def test_crawl_redirect_cross_domain(self, capsys):
+    async def test_crawl_redirect_cross_domain(self):
         async with respx.mock:
             respx.get("https://example.com/start").respond(
                 301, headers={"Location": "https://other.com/page"}
@@ -117,10 +116,8 @@ class TestCrawler:
             )
 
             result = await run_crawl("https://example.com/start", concurrency=1)
-            captured = capsys.readouterr()
-
             assert result.status == CrawlStatus.SUCCESS
-            assert "https://other.com/page" in captured.out
+            assert result.stats.visited == 1
 
     async def test_crawl_empty_site(self):
         async with respx.mock:
@@ -391,6 +388,7 @@ class TestCrawler:
             result = await run_crawl("https://example.com", concurrency=1, verbose=False)
             captured = capsys.readouterr()
             assert result.status == CrawlStatus.SUCCESS
+            assert "Crawl complete" in captured.out
             assert captured.err == ""
 
     async def test_max_time_completes(self):

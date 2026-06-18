@@ -79,12 +79,15 @@ class Crawler:
             except TimeoutError:
                 shutdown_event.set()
                 await asyncio.gather(*workers, return_exceptions=True)
+                CrawlLogger.print_summary(frontier.stats)
                 return CrawlResult(
                     status=CrawlStatus.PARTIAL,
                     stats=frontier.stats,
                 )
         else:
             await asyncio.gather(*workers)
+
+        CrawlLogger.print_summary(frontier.stats)
 
         if frontier.stats.failed > 0:
             return CrawlResult(status=CrawlStatus.PARTIAL, stats=frontier.stats)
