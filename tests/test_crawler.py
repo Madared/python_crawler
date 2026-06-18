@@ -1,3 +1,6 @@
+import asyncio
+
+import httpx
 import respx
 
 from crawler.crawler import CrawlStatus, run_crawl
@@ -389,3 +392,35 @@ class TestCrawler:
             captured = capsys.readouterr()
             assert result.status == CrawlStatus.SUCCESS
             assert captured.err == ""
+
+    async def test_max_time_completes(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1, max_time=5.0)
+            assert result.status == CrawlStatus.SUCCESS
+
+    async def test_max_time_triggers(self):
+        async def slow_page(request):
+            await asyncio.sleep(10)
+            return httpx.Response(200, text="<html></html>", headers={"content-type": "text/html"})
+
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").mock(side_effect=slow_page)
+
+            result = await run_crawl("https://example.com", concurrency=1, max_time=0.1)
+            assert result.status == CrawlStatus.PARTIAL
+
+    async def test_max_time_default(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS

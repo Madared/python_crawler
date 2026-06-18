@@ -98,6 +98,7 @@ async def run_crawl(
     max_pages: int = 0,
     delay: float = 0.2,
     verbose: bool = False,
+    max_time: float | None = None,
 ) -> CrawlResult:
     domain = urlparse(seed_url).hostname
     if not domain:
@@ -146,7 +147,22 @@ async def run_crawl(
             )
             for _ in range(concurrency)
         ]
-        await asyncio.gather(*workers)
+
+        if max_time is not None:
+            await asyncio.wait_for(
+                asyncio.gather(*workers),
+                timeout=max_time,
+            )
+        else:
+            await asyncio.gather(*workers)
+
+    except TimeoutError:
+        shutdown_event.set()
+        await asyncio.gather(*workers, return_exceptions=True)
+        return CrawlResult(
+            status=CrawlStatus.PARTIAL,
+            stats=frontier.stats,
+        )
     finally:
         await client.aclose()
         try:
