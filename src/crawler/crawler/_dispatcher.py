@@ -53,9 +53,7 @@ class WorkDispatcher:
         await self._storage.save(result)
 
         async with self._output_lock:
-            self._logger.page_fetched(
-                result.status_code, result.final_url, links, result.error
-            )
+            self._logger.page_fetched(result.status_code, result.final_url, links, result.error)
             self._logger.progress(self._frontier.stats)
 
         if result.error is None:
