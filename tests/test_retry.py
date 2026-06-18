@@ -133,7 +133,7 @@ class TestRetryFetcher:
         assert result.status_code == 429
         assert mock_fetcher.fetch.call_count == 1
 
-    async def test_verbose_logging(self, mock_fetcher, success_result):
+    async def test_retry_logs_info(self, mock_fetcher, success_result, caplog):
         result_429 = FetchResult(
             status_code=429,
             html=None,
@@ -142,37 +142,16 @@ class TestRetryFetcher:
             error="Rate limited",
         )
         mock_fetcher.fetch.side_effect = [result_429, success_result]
-        retry = RetryFetcher(mock_fetcher, max_retries=3, verbose=True)
+        retry = RetryFetcher(mock_fetcher, max_retries=3)
 
         with (
             patch("random.uniform", return_value=0.01),
             patch("asyncio.sleep", new_callable=AsyncMock),
-            patch("typer.echo") as mock_echo,
         ):
-            result = await retry.fetch("https://example.com/")
+            with caplog.at_level("INFO", logger="crawler.fetcher._retry"):
+                result = await retry.fetch("https://example.com/")
             assert result.status_code == 200
-            mock_echo.assert_called_once()
-            assert "Retry" in mock_echo.call_args[0][0]
-
-    async def test_non_verbose_no_logging(self, mock_fetcher, success_result):
-        result_429 = FetchResult(
-            status_code=429,
-            html=None,
-            final_url="https://example.com/",
-            content_type="text/html",
-            error="Rate limited",
-        )
-        mock_fetcher.fetch.side_effect = [result_429, success_result]
-        retry = RetryFetcher(mock_fetcher, max_retries=3, verbose=False)
-
-        with (
-            patch("random.uniform", return_value=0.01),
-            patch("asyncio.sleep", new_callable=AsyncMock),
-            patch("typer.echo") as mock_echo,
-        ):
-            result = await retry.fetch("https://example.com/")
-            assert result.status_code == 200
-            mock_echo.assert_not_called()
+            assert any("Retry" in record.message for record in caplog.records)
 
     async def test_multiple_retries(self, mock_fetcher, success_result):
         results = [

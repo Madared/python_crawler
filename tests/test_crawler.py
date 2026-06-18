@@ -556,6 +556,18 @@ class TestDummyStorage:
             assert result.status == CrawlStatus.SUCCESS
             assert storage.count == 3
 
+    def test_storage_is_abc(self):
+        from abc import ABC
+
+        from crawler.crawler import Storage
+
+        assert issubclass(Storage, ABC)
+
+    def test_dummy_storage_implements_storage(self):
+        from crawler.crawler import DummyStorage, Storage
+
+        assert issubclass(DummyStorage, Storage)
+
 
 class TestWorkerPool:
     async def test_worker_crash_handled(self, capsys):
@@ -722,6 +734,36 @@ class TestCrawlerContext:
         loop.remove_signal_handler(signal.SIGINT)
 
     async def test_close_no_loop_still_cleans_up(self):
+        import httpx
+
+        from crawler.crawler import CrawlerOptions
+        from crawler.crawler._context import CrawlerContext
+        from crawler.fetcher import RetryFetcher, SimpleFetcher
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        client = httpx.AsyncClient()
+        inner = SimpleFetcher(client=client)
+        fetcher = RetryFetcher(inner, max_retries=0)
+        frontier = Frontier("https://example.com", "example.com")
+
+        ctx = CrawlerContext(
+            domain="example.com",
+            frontier=frontier,
+            client=client,
+            fetcher=fetcher,
+            shutdown_event=asyncio.Event(),
+            output_lock=asyncio.Lock(),
+            robots_rules=RobotsTxtRules(),
+            effective_delay=0.2,
+            options=CrawlerOptions(),
+            signal_handler_registered=False,
+        )
+
+        await ctx.close()
+        assert client.is_closed
+
+    async def test_close_no_signal_handler_is_noop(self):
         import httpx
 
         from crawler.crawler import CrawlerOptions
@@ -945,3 +987,46 @@ class TestWorkDispatcher:
             await dispatch.work(url)
 
         mock_sleep.assert_not_called()
+
+
+class TestCrawlerClass:
+    async def test_with_custom_storage(self):
+        from crawler.crawler import Crawler, CrawlerOptions, Storage
+        from crawler.fetcher import FetchResult
+
+        class TrackingStorage(Storage):
+            def __init__(self):
+                self.saved: list[FetchResult] = []
+                self.closed = False
+
+            async def save(self, result: FetchResult) -> None:
+                self.saved.append(result)
+
+            async def close(self) -> None:
+                self.closed = True
+
+        storage = TrackingStorage()
+        crawler = Crawler(CrawlerOptions(concurrency=1), storage=storage)
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+            result = await crawler.run_crawl("https://example.com/")
+        assert result.status == CrawlStatus.SUCCESS
+        assert len(storage.saved) == 1
+        assert storage.closed
+
+    async def test_without_storage_uses_dummy(self):
+        from crawler.crawler import Crawler, CrawlerOptions
+
+        crawler = Crawler(CrawlerOptions(concurrency=1))
+        assert crawler._storage is not None
+
+    async def test_invalid_url_returns_fatal(self):
+        from crawler.crawler import Crawler, CrawlerOptions
+
+        crawler = Crawler(CrawlerOptions(concurrency=1))
+        result = await crawler.run_crawl("not-a-valid-url")
+        assert result.status == CrawlStatus.FATAL
+        assert result.stats.visited == 0

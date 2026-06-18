@@ -49,7 +49,6 @@ async def create_crawler_context(
     fetcher = RetryFetcher(
         SimpleFetcher(client=client),
         max_retries=options.max_retries,
-        verbose=options.verbose,
     )
 
     loop = asyncio.get_running_loop()
