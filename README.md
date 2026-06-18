@@ -182,6 +182,10 @@ The `Frontier` keeps all state in memory (Python sets + `asyncio.Queue`). This i
 
 `Frontier.add_url` is synchronous (not `async`) because it only performs in-memory set checks and `Queue.put_nowait`. Making it async would add unnecessary overhead for a method that never awaits. This is called from `WorkDispatcher` inside the async event loop, but since it's non-blocking, it doesn't stall other coroutines.
 
+**Per-Worker Delay vs Global Rate Limiting**
+
+The current politeness delay (`--delay`) is applied per-worker after each successful fetch. This means the total request rate scales linearly with concurrency: with `--concurrency 10 --delay 0.2`, each worker sleeps 0.2s between requests (~5 req/s), resulting in ~50 requests per second total. For the single-domain use case this is acceptable, but increasing concurrency directly increases the total request rate, which can violate the spirit of politeness. A production crawler would separate concurrency (parallelism — how many in-flight requests) from rate limiting (politeness — total requests per second across all workers) using a shared token bucket or semaphore. This would allow high concurrency for throughput while keeping the global request rate respectful.
+
 ### Extending to Multiple Domains
 
 The current architecture is domain-scoped by design: the `Frontier` filters URLs to a single domain, `robots.txt` rules are fetched per domain, and politeness delays are per-domain. This isolation is intentional — it prevents cross-domain contamination and respects each site's crawl rules independently.
