@@ -277,7 +277,8 @@ class TestCrawler:
     async def test_robots_disallow_path(self):
         async with respx.mock:
             respx.get("https://example.com/robots.txt").respond(
-                200, text="User-agent: *\nDisallow: /private/",
+                200,
+                text="User-agent: *\nDisallow: /private/",
                 headers={"content-type": "text/plain"},
             )
             respx.get("https://example.com/").respond(
