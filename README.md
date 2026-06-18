@@ -50,6 +50,13 @@ Crawl state management — tracks which URLs are discovered, in progress, and vi
 - **`Frontier`** — manages the URL queue with async-safe FIFO ordering, O(1) dedup (via visited/in-progress/queued sets), domain scoping, and max-pages limit. Exhaustion signaling via `asyncio.Event` ensures workers only stop when the queue is empty AND no workers are actively processing (prevents the queue-empty-but-work-in-flight race condition). `add_url` feeds URLs in, `next_url` returns the next URL to crawl (racing queue vs exhaustion), `mark_done` signals completion.
 - **`FrontierStats`** — dataclass with `discovered`, `visited`, and `failed` counts.
 
+### `crawler/crawler/`
+
+Crawl orchestrator — wires the fetcher, parser, and frontier together.
+
+- **`run_crawl`** — async function that runs a full crawl. Creates workers that loop: `next_url` → `fetch` → `extract_links` → `add_url` → `mark_done`. Handles concurrency, politeness delay, graceful shutdown on SIGINT, and client cleanup. Returns a `CrawlResult`.
+- **`CrawlResult`** — dataclass with `status` (`CrawlStatus.SUCCESS`, `CrawlStatus.PARTIAL`, or `CrawlStatus.FATAL`) and `stats` (`FrontierStats` with `discovered`, `visited`, `failed` counts).
+
 ## Getting Started
 
 ```bash
