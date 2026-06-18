@@ -43,8 +43,7 @@ def _print_result(
 
 def _verbose_progress(stats: FrontierStats) -> None:
     typer.echo(
-        f"  [{stats.visited} visited / {stats.discovered}"
-        f" discovered / {stats.failed} failed]",
+        f"  [{stats.visited} visited / {stats.discovered} discovered / {stats.failed} failed]",
         err=True,
     )
 
@@ -136,8 +135,13 @@ async def run_crawl(
         workers = [
             asyncio.create_task(
                 _worker(
-                    frontier, fetcher, effective_delay, output_lock,
-                    shutdown_event, robots_rules, verbose,
+                    frontier,
+                    fetcher,
+                    effective_delay,
+                    output_lock,
+                    shutdown_event,
+                    robots_rules,
+                    verbose,
                 )
             )
             for _ in range(concurrency)
