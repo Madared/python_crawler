@@ -422,3 +422,506 @@ class TestCrawler:
 
             result = await run_crawl("https://example.com", concurrency=1)
             assert result.status == CrawlStatus.SUCCESS
+
+    async def test_robots_txt_timeout_fallback(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").mock(
+                side_effect=httpx.TimeoutException("Request timed out")
+            )
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+
+    async def test_robots_txt_connection_error(self):
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").mock(
+                side_effect=httpx.ConnectError("DNS failure")
+            )
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1)
+            assert result.status == CrawlStatus.SUCCESS
+
+    async def test_invalid_seed_url_fatal(self):
+        result = await run_crawl("not-a-valid-url", concurrency=1)
+        assert result.status == CrawlStatus.FATAL
+        assert result.stats.visited == 0
+
+    async def test_unsupported_scheme_url(self):
+        result = await run_crawl("ftp://example.com", concurrency=1)
+        assert result.status == CrawlStatus.PARTIAL
+        assert result.stats.visited == 1
+        assert result.stats.failed == 1
+
+
+class TestDummyStorage:
+    async def test_save_called(self):
+        from crawler.crawler import DummyStorage
+        from crawler.fetcher import FetchResult
+
+        storage = DummyStorage()
+        result = FetchResult(
+            status_code=200,
+            html="<html></html>",
+            final_url="https://example.com/",
+            content_type="text/html",
+            error=None,
+        )
+        await storage.save(result)
+
+    async def test_close_does_not_raise(self):
+        from crawler.crawler import DummyStorage
+
+        storage = DummyStorage()
+        await storage.close()
+
+    async def test_custom_storage(self):
+        from crawler.crawler import Storage, run_crawl
+        from crawler.fetcher import FetchResult
+
+        class TestStorage(Storage):
+            def __init__(self):
+                self.saved: list[FetchResult] = []
+
+            async def save(self, result: FetchResult) -> None:
+                self.saved.append(result)
+
+            async def close(self) -> None:
+                self.saved.append(None)
+
+        storage = TestStorage()
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1, storage=storage)
+            assert result.status == CrawlStatus.SUCCESS
+            assert len(storage.saved) == 2
+            assert storage.saved[0] is not None
+            assert storage.saved[1] is None
+
+    async def test_storage_save_called_once_per_page(self):
+        from crawler.crawler import Storage, run_crawl
+        from crawler.fetcher import FetchResult
+
+        class CallbackStorage(Storage):
+            def __init__(self):
+                self.count = 0
+
+            async def save(self, result: FetchResult) -> None:
+                self.count += 1
+
+        storage = CallbackStorage()
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").respond(
+                200,
+                text='<a href="/a">a</a><a href="/b">b</a>',
+                headers={"content-type": "text/html"},
+            )
+            respx.get("https://example.com/a").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+            respx.get("https://example.com/b").respond(
+                200, text="<html></html>", headers={"content-type": "text/html"}
+            )
+
+            result = await run_crawl("https://example.com", concurrency=1, storage=storage)
+            assert result.status == CrawlStatus.SUCCESS
+            assert storage.count == 3
+
+
+class TestWorkerPool:
+    async def test_worker_crash_handled(self, capsys):
+        from unittest.mock import AsyncMock
+
+        import httpx
+        import pytest
+
+        from crawler.crawler import CrawlerOptions
+        from crawler.crawler._context import CrawlerContext
+        from crawler.crawler._dispatcher import WorkDispatcher
+        from crawler.crawler._pool import WorkerPool
+        from crawler.fetcher import RetryFetcher, SimpleFetcher
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        frontier = Frontier("https://example.com", "example.com")
+        client = httpx.AsyncClient()
+        inner = SimpleFetcher(client=client)
+        fetcher = RetryFetcher(inner, max_retries=0)
+        options = CrawlerOptions(concurrency=1, verbose=False)
+
+        shutdown_event = AsyncMock(spec=asyncio.Event)
+        shutdown_event.is_set.return_value = False
+
+        ctx = CrawlerContext(
+            domain="example.com",
+            frontier=frontier,
+            client=client,
+            fetcher=fetcher,
+            shutdown_event=shutdown_event,
+            output_lock=asyncio.Lock(),
+            robots_rules=RobotsTxtRules(),
+            effective_delay=0.0,
+            options=options,
+            signal_handler_registered=False,
+        )
+
+        dispatch = AsyncMock(spec=WorkDispatcher)
+        dispatch.work.side_effect = RuntimeError("Worker crashed!")
+
+        pool = WorkerPool(ctx, dispatch)
+        with pytest.raises(RuntimeError, match="Worker crashed!"):
+            await pool.run()
+
+    async def test_worker_timeout_produces_partial(self):
+        import httpx
+        import respx
+
+        from crawler.crawler import run_crawl
+
+        async def slow_page(request):
+            await asyncio.sleep(10)
+            return httpx.Response(200, text="<html></html>", headers={"content-type": "text/html"})
+
+        async with respx.mock:
+            respx.get("https://example.com/robots.txt").respond(200, text="")
+            respx.get("https://example.com/").mock(side_effect=slow_page)
+
+            result = await run_crawl("https://example.com", concurrency=1, max_time=0.1)
+            assert result.status == CrawlStatus.PARTIAL
+
+
+class TestCrawlerContext:
+    async def test_close_cleans_up_client(self):
+        import httpx
+
+        from crawler.crawler import CrawlerOptions
+        from crawler.crawler._context import CrawlerContext
+        from crawler.fetcher import RetryFetcher, SimpleFetcher
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        client = httpx.AsyncClient()
+        inner = SimpleFetcher(client=client)
+        fetcher = RetryFetcher(inner, max_retries=0)
+        frontier = Frontier("https://example.com", "example.com")
+
+        ctx = CrawlerContext(
+            domain="example.com",
+            frontier=frontier,
+            client=client,
+            fetcher=fetcher,
+            shutdown_event=asyncio.Event(),
+            output_lock=asyncio.Lock(),
+            robots_rules=RobotsTxtRules(),
+            effective_delay=0.2,
+            options=CrawlerOptions(),
+            signal_handler_registered=False,
+        )
+
+        assert not client.is_closed
+        await ctx.close()
+        assert client.is_closed
+
+    async def test_close_idempotent(self):
+        import httpx
+
+        from crawler.crawler import CrawlerOptions
+        from crawler.crawler._context import CrawlerContext
+        from crawler.fetcher import RetryFetcher, SimpleFetcher
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        client = httpx.AsyncClient()
+        inner = SimpleFetcher(client=client)
+        fetcher = RetryFetcher(inner, max_retries=0)
+        frontier = Frontier("https://example.com", "example.com")
+
+        ctx = CrawlerContext(
+            domain="example.com",
+            frontier=frontier,
+            client=client,
+            fetcher=fetcher,
+            shutdown_event=asyncio.Event(),
+            output_lock=asyncio.Lock(),
+            robots_rules=RobotsTxtRules(),
+            effective_delay=0.2,
+            options=CrawlerOptions(),
+            signal_handler_registered=False,
+        )
+
+        await ctx.close()
+        await ctx.close()
+        assert client.is_closed
+
+    async def test_close_with_signal_handler_registered(self):
+        import signal
+
+        import httpx
+
+        from crawler.crawler import CrawlerOptions
+        from crawler.crawler._context import CrawlerContext
+        from crawler.fetcher import RetryFetcher, SimpleFetcher
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        client = httpx.AsyncClient()
+        inner = SimpleFetcher(client=client)
+        fetcher = RetryFetcher(inner, max_retries=0)
+        frontier = Frontier("https://example.com", "example.com")
+
+        loop = asyncio.get_running_loop()
+        shutdown_event = asyncio.Event()
+        loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
+
+        ctx = CrawlerContext(
+            domain="example.com",
+            frontier=frontier,
+            client=client,
+            fetcher=fetcher,
+            shutdown_event=shutdown_event,
+            output_lock=asyncio.Lock(),
+            robots_rules=RobotsTxtRules(),
+            effective_delay=0.2,
+            options=CrawlerOptions(),
+            signal_handler_registered=True,
+        )
+
+        await ctx.close()
+        assert client.is_closed
+
+        loop.remove_signal_handler(signal.SIGINT)
+
+    async def test_close_no_loop_still_cleans_up(self):
+        import httpx
+
+        from crawler.crawler import CrawlerOptions
+        from crawler.crawler._context import CrawlerContext
+        from crawler.fetcher import RetryFetcher, SimpleFetcher
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        client = httpx.AsyncClient()
+        inner = SimpleFetcher(client=client)
+        fetcher = RetryFetcher(inner, max_retries=0)
+        frontier = Frontier("https://example.com", "example.com")
+
+        ctx = CrawlerContext(
+            domain="example.com",
+            frontier=frontier,
+            client=client,
+            fetcher=fetcher,
+            shutdown_event=asyncio.Event(),
+            output_lock=asyncio.Lock(),
+            robots_rules=RobotsTxtRules(),
+            effective_delay=0.2,
+            options=CrawlerOptions(),
+            signal_handler_registered=False,
+        )
+
+        await ctx.close()
+        assert client.is_closed
+
+
+class TestWorkDispatcher:
+    async def test_skip_disallowed_by_robots(self):
+        from unittest.mock import AsyncMock
+
+        from crawler.crawler._dispatcher import WorkDispatcher
+        from crawler.crawler._logger import CrawlLogger
+        from crawler.crawler._types import DispatcherAsync, DispatcherConfig, DispatcherDeps
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import parse_robots_txt
+
+        frontier = Frontier("https://example.com/private/page", "example.com")
+        url = await frontier.next_url()
+        assert url is not None
+
+        rules = parse_robots_txt("User-agent: *\nDisallow: /private/")
+        deps = DispatcherDeps(
+            frontier=frontier,
+            fetcher=AsyncMock(),
+            logger=CrawlLogger(verbose=False),
+            storage=AsyncMock(),
+        )
+        config = DispatcherConfig(delay=0.0, robots_rules=rules)
+        async_ctx = DispatcherAsync(output_lock=asyncio.Lock(), shutdown_event=asyncio.Event())
+
+        dispatch = WorkDispatcher(deps, config, async_ctx)
+        await dispatch.work(url)
+
+        assert frontier.stats.visited == 1
+        assert frontier.stats.failed == 0
+        deps.fetcher.fetch.assert_not_called()
+
+    async def test_fetch_links_and_store(self):
+        from unittest.mock import AsyncMock, patch
+
+        from crawler.crawler._dispatcher import WorkDispatcher
+        from crawler.crawler._logger import CrawlLogger
+        from crawler.crawler._types import DispatcherAsync, DispatcherConfig, DispatcherDeps
+        from crawler.fetcher import FetchResult
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        frontier = Frontier("https://example.com/", "example.com")
+        url = await frontier.next_url()
+        assert url is not None
+
+        fetch_result = FetchResult(
+            status_code=200,
+            html='<a href="/page1">link</a>',
+            final_url="https://example.com/",
+            content_type="text/html",
+            error=None,
+        )
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch.return_value = fetch_result
+
+        mock_storage = AsyncMock()
+
+        deps = DispatcherDeps(
+            frontier=frontier,
+            fetcher=mock_fetcher,
+            logger=CrawlLogger(verbose=False),
+            storage=mock_storage,
+        )
+        config = DispatcherConfig(delay=0.0, robots_rules=RobotsTxtRules())
+        async_ctx = DispatcherAsync(output_lock=asyncio.Lock(), shutdown_event=asyncio.Event())
+
+        dispatch = WorkDispatcher(deps, config, async_ctx)
+        with patch(
+            "crawler.crawler._dispatcher.extract_links", return_value=["https://example.com/page1"]
+        ):
+            await dispatch.work(url)
+
+        assert frontier.stats.visited == 1
+        assert frontier.stats.failed == 0
+        assert frontier.stats.discovered == 2
+        mock_storage.save.assert_awaited_once_with(fetch_result)
+
+    async def test_fetch_error_marks_failed(self):
+        from unittest.mock import AsyncMock
+
+        from crawler.crawler._dispatcher import WorkDispatcher
+        from crawler.crawler._logger import CrawlLogger
+        from crawler.crawler._types import DispatcherAsync, DispatcherConfig, DispatcherDeps
+        from crawler.fetcher import FetchResult
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        frontier = Frontier("https://example.com/", "example.com")
+        url = await frontier.next_url()
+        assert url is not None
+
+        fetch_result = FetchResult(
+            status_code=0,
+            html=None,
+            final_url="https://example.com/",
+            content_type="",
+            error="Connection refused",
+        )
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch.return_value = fetch_result
+
+        deps = DispatcherDeps(
+            frontier=frontier,
+            fetcher=mock_fetcher,
+            logger=CrawlLogger(verbose=False),
+            storage=AsyncMock(),
+        )
+        config = DispatcherConfig(delay=0.0, robots_rules=RobotsTxtRules())
+        async_ctx = DispatcherAsync(output_lock=asyncio.Lock(), shutdown_event=asyncio.Event())
+
+        dispatch = WorkDispatcher(deps, config, async_ctx)
+        await dispatch.work(url)
+
+        assert frontier.stats.visited == 1
+        assert frontier.stats.failed == 1
+
+    async def test_delay_applied_after_success(self):
+        from unittest.mock import AsyncMock, patch
+
+        from crawler.crawler._dispatcher import WorkDispatcher
+        from crawler.crawler._logger import CrawlLogger
+        from crawler.crawler._types import DispatcherAsync, DispatcherConfig, DispatcherDeps
+        from crawler.fetcher import FetchResult
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        frontier = Frontier("https://example.com/", "example.com")
+        url = await frontier.next_url()
+        assert url is not None
+
+        fetch_result = FetchResult(
+            status_code=200,
+            html="<html></html>",
+            final_url="https://example.com/",
+            content_type="text/html",
+            error=None,
+        )
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch.return_value = fetch_result
+
+        deps = DispatcherDeps(
+            frontier=frontier,
+            fetcher=mock_fetcher,
+            logger=CrawlLogger(verbose=False),
+            storage=AsyncMock(),
+        )
+        config = DispatcherConfig(delay=1.0, robots_rules=RobotsTxtRules())
+        async_ctx = DispatcherAsync(output_lock=asyncio.Lock(), shutdown_event=asyncio.Event())
+
+        dispatch = WorkDispatcher(deps, config, async_ctx)
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await dispatch.work(url)
+
+        mock_sleep.assert_awaited_once_with(1.0)
+
+    async def test_no_delay_on_fetch_error(self):
+        from unittest.mock import AsyncMock, patch
+
+        from crawler.crawler._dispatcher import WorkDispatcher
+        from crawler.crawler._logger import CrawlLogger
+        from crawler.crawler._types import DispatcherAsync, DispatcherConfig, DispatcherDeps
+        from crawler.fetcher import FetchResult
+        from crawler.frontier import Frontier
+        from crawler.robotstxt import RobotsTxtRules
+
+        frontier = Frontier("https://example.com/", "example.com")
+        url = await frontier.next_url()
+        assert url is not None
+
+        fetch_result = FetchResult(
+            status_code=500,
+            html=None,
+            final_url="https://example.com/",
+            content_type="text/html",
+            error="Server error",
+        )
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch.return_value = fetch_result
+
+        deps = DispatcherDeps(
+            frontier=frontier,
+            fetcher=mock_fetcher,
+            logger=CrawlLogger(verbose=False),
+            storage=AsyncMock(),
+        )
+        config = DispatcherConfig(delay=1.0, robots_rules=RobotsTxtRules())
+        async_ctx = DispatcherAsync(output_lock=asyncio.Lock(), shutdown_event=asyncio.Event())
+
+        dispatch = WorkDispatcher(deps, config, async_ctx)
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await dispatch.work(url)
+
+        mock_sleep.assert_not_called()
