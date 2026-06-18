@@ -1,9 +1,34 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import IntEnum
 
-from crawler.frontier import FrontierStats
+from crawler.crawler._logger import CrawlLogger
+from crawler.crawler._storage import Storage
+from crawler.fetcher import Fetcher
+from crawler.frontier import Frontier, FrontierStats
+from crawler.robotstxt import RobotsTxtRules
+
+
+@dataclass
+class DispatcherDeps:
+    frontier: Frontier
+    fetcher: Fetcher
+    logger: CrawlLogger
+    storage: Storage
+
+
+@dataclass
+class DispatcherConfig:
+    delay: float
+    robots_rules: RobotsTxtRules
+
+
+@dataclass
+class DispatcherAsync:
+    output_lock: asyncio.Lock
+    shutdown_event: asyncio.Event
 
 
 class CrawlStatus(IntEnum):

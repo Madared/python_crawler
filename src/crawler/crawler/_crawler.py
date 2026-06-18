@@ -9,7 +9,14 @@ import httpx
 from crawler.crawler._dispatcher import WorkDispatcher
 from crawler.crawler._logger import CrawlLogger
 from crawler.crawler._storage import DummyStorage, Storage
-from crawler.crawler._types import CrawlerOptions, CrawlResult, CrawlStatus
+from crawler.crawler._types import (
+    CrawlerOptions,
+    CrawlResult,
+    CrawlStatus,
+    DispatcherAsync,
+    DispatcherConfig,
+    DispatcherDeps,
+)
 from crawler.fetcher import Fetcher, RetryFetcher, SimpleFetcher
 from crawler.frontier import Frontier, FrontierStats
 from crawler.robotstxt import RobotsTxtRules, parse_robots_txt
@@ -57,16 +64,21 @@ class Crawler:
         effective_delay: float,
     ) -> CrawlResult:
         logger = CrawlLogger(verbose=self._options.verbose)
-        dispatch = WorkDispatcher(
+        deps = DispatcherDeps(
             frontier=frontier,
             fetcher=fetcher,
-            delay=effective_delay,
-            output_lock=output_lock,
-            shutdown_event=shutdown_event,
-            robots_rules=robots_rules,
             logger=logger,
             storage=self._storage,
         )
+        config = DispatcherConfig(
+            delay=effective_delay,
+            robots_rules=robots_rules,
+        )
+        async_ctx = DispatcherAsync(
+            output_lock=output_lock,
+            shutdown_event=shutdown_event,
+        )
+        dispatch = WorkDispatcher(deps, config, async_ctx)
 
         workers = [
             asyncio.create_task(self._run_worker_loop(dispatch, frontier, shutdown_event))
