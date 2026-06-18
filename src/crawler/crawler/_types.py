@@ -25,3 +25,4 @@ class CrawlerOptions:
     delay: float = 0.2
     verbose: bool = False
     max_time: float | None = None
+    max_retries: int = 3

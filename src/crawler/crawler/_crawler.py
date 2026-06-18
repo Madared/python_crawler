@@ -9,7 +9,7 @@ import httpx
 from crawler.crawler._dispatcher import WorkDispatcher
 from crawler.crawler._logger import CrawlLogger
 from crawler.crawler._types import CrawlerOptions, CrawlResult, CrawlStatus
-from crawler.fetcher import Fetcher
+from crawler.fetcher import Fetcher, RetryFetcher, SimpleFetcher
 from crawler.frontier import Frontier, FrontierStats
 from crawler.robotstxt import RobotsTxtRules, parse_robots_txt
 
@@ -105,7 +105,11 @@ class Crawler:
             max_redirects=10,
             headers={"User-Agent": "Mozilla/5.0 (compatible; Crawler/1.0)"},
         )
-        fetcher = Fetcher(client=client)
+        fetcher = RetryFetcher(
+            SimpleFetcher(client=client),
+            max_retries=self._options.max_retries,
+            verbose=self._options.verbose,
+        )
 
         loop = asyncio.get_running_loop()
 

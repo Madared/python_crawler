@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from crawler.fetcher import Fetcher
+from crawler.fetcher import SimpleFetcher
 
 
 @pytest.fixture
@@ -14,7 +14,7 @@ async def client():
 
 @pytest.fixture
 async def fetcher(client):
-    return Fetcher(client=client)
+    return SimpleFetcher(client=client)
 
 
 class TestFetcher:
@@ -171,7 +171,7 @@ class TestFetcher:
 
     # 11. Large response
     async def test_fetch_large_response(self, client):
-        small_fetcher = Fetcher(client=client, max_response_size=1024)
+        small_fetcher = SimpleFetcher(client=client, max_response_size=1024)
         async with respx.mock:
             large_body = "x" * (2 * 1024)
             respx.get("https://example.com").respond(
@@ -187,7 +187,7 @@ class TestFetcher:
     # 13. User-Agent header
     async def test_user_agent_header(self):
         client = httpx.AsyncClient(follow_redirects=True, headers={"User-Agent": "TestCrawler/1.0"})
-        fetcher = Fetcher(client=client)
+        fetcher = SimpleFetcher(client=client)
         async with respx.mock:
             route = respx.get("https://example.com").respond(
                 200, text="<html></html>", headers={"content-type": "text/html"}
